@@ -19,6 +19,11 @@
   },
   "homepage": "https://github.com/PSelasi/Vessel-Tracking-App#readme",
   "dependencies": {
-    "leaflet": "^1.9.4"
+    "ais-stream-decoder": "^2.1.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "leaflet": "^1.9.4",
+    "socket.io": "^4.8.3"
   }
 }

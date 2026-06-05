@@ -1,0 +1,98 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0e1a;
+  color: #e0e6f0;
+  font-family: sans-serif;
+}
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Topbar ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: #0d1224;
+  border-bottom: 1px solid #1e2a45;
+  z-index: 1000;
+}
+
+.topbar h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #7eb8f7;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #8a9bb5;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f05050;
+  transition: background 0.4s;
+}
+
+.dot.live { background: #3ecf8e; }
+
+.vessel-count {
+  font-size: 12px;
+  color: #8a9bb5;
+}
+
+/* ── Info panel ── */
+.info-panel {
+  position: absolute;
+  bottom: 24px;
+  left: 16px;
+  z-index: 1000;
+  background: #0d1224ee;
+  border: 1px solid #1e2a45;
+  border-radius: 10px;
+  padding: 14px 18px;
+  min-width: 220px;
+  backdrop-filter: blur(6px);
+}
+
+.info-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #7eb8f7;
+  margin-bottom: 10px;
+  padding-right: 20px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1e2a4540;
+}
+
+.label { color: #8a9bb5; }
+.value { color: #e0e6f0; }
+
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #8a9bb5;
+}
