@@ -17,6 +17,86 @@ const io = new Server(server, {
   }
 });
 
+// --- Enrichment cache and helper ----------------------------------------
+const enrichmentCache = new Map(); // mmsi -> { data, ts }
+const ENRICH_TTL = Number(process.env.ENRICH_TTL_MS) || 12 * 60 * 60 * 1000; // 12h default
+
+function getProviderList() {
+  // Primary: provide a JSON array via VESSEL_PROVIDERS env var
+  if (process.env.VESSEL_PROVIDERS) {
+    try {
+      const list = JSON.parse(process.env.VESSEL_PROVIDERS);
+      if (Array.isArray(list)) return list;
+    } catch (e) {
+      console.warn("Invalid VESSEL_PROVIDERS JSON, falling back to individual vars");
+    }
+  }
+
+  const list = [];
+  if (process.env.VESSEL_API_1_URL) list.push(process.env.VESSEL_API_1_URL);
+  if (process.env.VESSEL_API_2_URL) list.push(process.env.VESSEL_API_2_URL);
+  return list;
+}
+
+async function fetchWithTimeout(url, timeout = 5000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
+async function enrichVessel(vessel) {
+  if (!vessel || !vessel.mmsi) return vessel;
+
+  const cached = enrichmentCache.get(vessel.mmsi);
+  if (cached && (Date.now() - cached.ts) < ENRICH_TTL) {
+    Object.assign(vessel, cached.data);
+    return vessel;
+  }
+
+  const providers = getProviderList();
+  if (!providers.length) return vessel; // nothing configured
+
+  for (const rawUrl of providers) {
+    try {
+      const url = rawUrl.replace('{mmsi}', encodeURIComponent(vessel.mmsi));
+      const res = await fetchWithTimeout(url, 5000);
+      if (!res.ok) continue;
+      const json = await res.json();
+
+      // Provider responses vary widely. Try to pull common fields if present.
+      const meta = {};
+      if (json.type) meta.type = json.type;
+      if (json.shipType) meta.type = meta.type || json.shipType;
+      if (json.flag) meta.flag = json.flag;
+      if (json.country) meta.flag = meta.flag || json.country;
+      if (json.callsign) meta.callsign = json.callsign;
+      if (json.destination) meta.destination = json.destination;
+      if (json.lastPort) meta.lastPort = json.lastPort;
+      if (json.prevPort) meta.lastPort = meta.lastPort || json.prevPort;
+      if (json.imo) meta.imo = json.imo;
+      if (json.name) meta.name = vessel.name === 'Unknown' ? json.name : vessel.name;
+
+      // merge into vessel and cache
+      Object.assign(vessel, meta);
+      enrichmentCache.set(vessel.mmsi, { data: meta, ts: Date.now() });
+      console.log(`Enriched MMSI ${vessel.mmsi} from provider ${rawUrl}`);
+      break; // stop after first successful enrichment
+    } catch (err) {
+      console.debug(`Provider ${rawUrl} failed: ${err.message}`);
+      continue;
+    }
+  }
+
+  return vessel;
+}
+
 app.use(express.static("Public"));
 
 // Serve the static node frontend for all other routes
@@ -50,7 +130,7 @@ function connectToAISStream() {
     // ── STEP 3: Parse every incoming AIS message ─────────────────────────────
   // Raw AIS data comes in as JSON. We extract just what the map needs.
 
-  aisWs.on("message", (rawData) => {
+  aisWs.on("message", async (rawData) => {
     try {
       const data = JSON.parse(rawData);
 
@@ -69,14 +149,21 @@ function connectToAISStream() {
         heading:   posReport.TrueHeading,
         course:    posReport.Cog,              // Course Over Ground
         timestamp: metaData.time_utc,
+         navStatus: posReport.NavigationStatus || posReport.NavStatus || metaData.NavigationStatus,
+         type: metaData.ShipType || metaData.ShipTypeName || metaData.ShipTypeCode || metaData.ShipTypeDescription,
+         flag: metaData.Flag || metaData.Country || metaData.CountryOfRegistry,
+         callsign: metaData.Callsign || metaData.CallSign,
+         destination: metaData.Destination,
+         lastPort: metaData.LastPort || metaData.LastPortName || metaData.PrevPort,
+         imo: metaData.IMO || metaData.IMONumber,
       };
 
      // Skip if position is invalid (0,0 is a common bad-data artifact)
     if (vessel.lat === 0 && vessel.lng === 0) return;
 
-//STEP 4: Broadcast to all connected browser clients 
-// Socket.io pushes this to every open map tab instantly.
-    io.emit("vesselUpdate", vessel);
+  //STEP 4: Enrich (if configured) then broadcast to browser clients
+  await enrichVessel(vessel).catch((e) => console.debug('Enrich failed', e.message));
+  io.emit("vesselUpdate", vessel);
 
     } catch (err) {
       console.error("Parse error:", err.message);

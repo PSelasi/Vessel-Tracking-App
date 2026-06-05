@@ -102,17 +102,39 @@ function updateSearchResults(query) {
   });
 }
 
-function getVesselIcon(heading) {
+function getVesselState(speed) {
+  const parsed = Number(speed);
+  if (Number.isNaN(parsed)) {
+    return { label: "Unknown", color: "#8a9bb5" };
+  }
+
+  if (parsed <= 0.3) {
+    return { label: "Anchored / moored", color: "#f05050" };
+  }
+
+  if (parsed < 5) {
+    return { label: "Slow / manoeuvring", color: "#f5a623" };
+  }
+
+  if (parsed < 14) {
+    return { label: "En route", color: "#3ecf8e" };
+  }
+
+  return { label: "Fast / underway", color: "#7eb8f7" };
+}
+
+function getVesselIcon(heading, speed) {
   const angle = (heading && heading !== 511) ? heading : 0;
+  const { color } = getVesselState(speed);
   return L.divIcon({
     className: "",
     html: `<div style="
       width: 0; height: 0;
       border-left: 5px solid transparent;
       border-right: 5px solid transparent;
-      border-bottom: 14px solid #3ecf8e;
+      border-bottom: 14px solid ${color};
       transform: rotate(${angle}deg);
-      filter: drop-shadow(0 0 3px #3ecf8e88);
+      filter: drop-shadow(0 0 3px ${color}88);
     "></div>`,
     iconSize: [10, 14],
     iconAnchor: [5, 7],
@@ -162,11 +184,11 @@ socket.on("vesselUpdate", (v) => {
     if (shouldUpdateMarker) {
       existing.marker
         .setLatLng([v.lat, v.lng])
-        .setIcon(getVesselIcon(v.heading));
+        .setIcon(getVesselIcon(v.heading, v.speed));
     }
   } else {
     const marker = L.marker([v.lat, v.lng], {
-      icon: getVesselIcon(v.heading),
+      icon: getVesselIcon(v.heading, v.speed),
       title: v.name,
     }).addTo(map);
 
@@ -189,8 +211,16 @@ function showPanel(mmsi, center = true) {
   if (!v) return;
   selectedMMSI = mmsi;
 
+  const state = getVesselState(v.speed);
+
   document.getElementById("panel-name").textContent    = v.name || "Unknown";
   document.getElementById("panel-mmsi").textContent    = v.mmsi;
+  document.getElementById("panel-status").textContent  = state.label;
+  document.getElementById("panel-type").textContent    = v.type || "—";
+  document.getElementById("panel-flag").textContent    = v.flag || "—";
+  document.getElementById("panel-callsign").textContent = v.callsign || "—";
+  document.getElementById("panel-lastport").textContent = v.lastPort || "—";
+  document.getElementById("panel-destination").textContent = v.destination || "—";
   document.getElementById("panel-speed").textContent   = v.speed != null ? `${v.speed} kn` : "—";
   document.getElementById("panel-heading").textContent = v.heading && v.heading !== 511 ? `${v.heading}°` : "—";
   document.getElementById("panel-course").textContent  = v.course != null ? `${v.course.toFixed(1)}°` : "—";
