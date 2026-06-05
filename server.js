@@ -17,11 +17,11 @@ const io = new Server(server, {
   }
 });
 
-app.use(express.static("vessel-tracking-app/dist"));
+app.use(express.static("Public"));
 
-// Serve React app for all other routes (SPA support)
+// Serve the static node frontend for all other routes
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "vessel-tracking-app/dist/index.html"));
+  res.sendFile(path.join(__dirname, "Public/index.html"));
 });
 
 const PORT = process.env.PORT || 3000;
@@ -59,7 +59,7 @@ function connectToAISStream() {
       const metaData  = data?.MetaData;
             if (!posReport || !metaData) return; // skip non-position messages
 
-      // 🍲 The distilled vessel object — only what Leaflet needs
+      // The distilled vessel object — only what Leaflet needs
       const vessel = {
         mmsi:      metaData.MMSI,              // unique ship ID
         name:      metaData.ShipName?.trim() || "Unknown",
@@ -95,7 +95,7 @@ function connectToAISStream() {
     aisWs.terminate();
   });
 }
-//STEP 5: Handle browser clients connecting 
+// Handle browser clients connecting 
 // Log when a browser tab tunes in or drops off.
 
 io.on("connection", (socket) => {

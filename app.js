@@ -4,6 +4,7 @@
       center: [20, 0],      // start centered on the world
       zoom: 3,
       zoomControl: true,
+      preferCanvas: true,
     });
 
     // Base layer — OpenStreetMap (dark-friendly nautical feel)
@@ -40,8 +41,68 @@
     // ── STEP 3: Vessel marker setup ───────────────────────────────────────────
     const vessels = {};   // mmsi → { marker, data }
     let vesselCount = 0;
+    let selectedMMSI = null;
 
-    // Custom ship icon — a small directional arrow
+    const searchInput = document.getElementById("search-input");
+    const searchResults = document.getElementById("search-results");
+    const searchContainer = document.getElementById("search-container");
+
+    function normalizeSearchText(value) {
+      return (value || "").toString().trim().toLowerCase();
+    }
+
+    function clearSearchResults() {
+      if (!searchResults) return;
+      searchResults.innerHTML = "";
+      searchResults.style.display = "none";
+    }
+
+    function updateSearchResults(query) {
+      if (!searchResults) return;
+      const q = normalizeSearchText(query);
+      if (!q) {
+        clearSearchResults();
+        return;
+      }
+
+      const results = Object.values(vessels)
+        .map((entry) => entry.data)
+        .filter((v) => {
+          const name = normalizeSearchText(v.name);
+          return name.includes(q) || String(v.mmsi).includes(q);
+        })
+        .sort((a, b) => {
+          const nameA = normalizeSearchText(a.name);
+          const nameB = normalizeSearchText(b.name);
+          if (nameA !== nameB) return nameA.localeCompare(nameB);
+          return a.mmsi - b.mmsi;
+        })
+        .slice(0, 20);
+
+      searchResults.innerHTML = results.length
+        ? results.map((v) => `
+            <button class="search-item" type="button" data-mmsi="${v.mmsi}">
+              <strong>${v.name || "Unknown Vessel"}</strong>
+              <div class="item-meta">
+                <span>MMSI: ${v.mmsi}</span>
+                <span>${v.lat.toFixed(2)}, ${v.lng.toFixed(2)}</span>
+              </div>
+            </button>
+          `).join("")
+        : `<div class="search-empty">No vessels found for “${query}”.</div>`;
+
+      searchResults.style.display = "block";
+      searchResults.querySelectorAll(".search-item").forEach((button) => {
+        button.addEventListener("click", () => {
+          const mmsi = button.dataset.mmsi;
+          if (!mmsi) return;
+          searchInput.value = "";
+          clearSearchResults();
+          showPanel(mmsi);
+        });
+      });
+    }
+
     function getVesselIcon(heading) {
       const angle = (heading && heading !== 511) ? heading : 0;
       return L.divIcon({
@@ -56,6 +117,18 @@
         "></div>`,
         iconSize: [10, 14],
         iconAnchor: [5, 7],
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener("input", (event) => {
+        updateSearchResults(event.target.value);
+      });
+
+      window.addEventListener("click", (event) => {
+        if (searchContainer && !searchContainer.contains(event.target)) {
+          clearSearchResults();
+        }
       });
     }
 
@@ -76,13 +149,23 @@
       if (!v.lat || !v.lng) return;
 
       if (vessels[v.mmsi]) {
-        // Update existing marker
-        vessels[v.mmsi].marker
-          .setLatLng([v.lat, v.lng])
-          .setIcon(getVesselIcon(v.heading));
-        vessels[v.mmsi].data = v;
+        const existing = vessels[v.mmsi];
+        const previous = existing.data;
+        const shouldUpdateMarker =
+          previous.lat !== v.lat ||
+          previous.lng !== v.lng ||
+          previous.heading !== v.heading ||
+          previous.speed !== v.speed ||
+          previous.name !== v.name;
+
+        existing.data = v;
+
+        if (shouldUpdateMarker) {
+          existing.marker
+            .setLatLng([v.lat, v.lng])
+            .setIcon(getVesselIcon(v.heading));
+        }
       } else {
-        // Create new marker
         const marker = L.marker([v.lat, v.lng], {
           icon: getVesselIcon(v.heading),
           title: v.name,
@@ -94,14 +177,15 @@
         document.getElementById("count").textContent = vesselCount;
       }
 
-      // Refresh panel if this vessel is currently selected
-      if (selectedMMSI === v.mmsi) showPanel(v.mmsi);
+      if (searchInput?.value.trim()) {
+        updateSearchResults(searchInput.value);
+      }
+
+      if (selectedMMSI === v.mmsi) showPanel(v.mmsi, false);
     });
 
-    // ── STEP 5: Info panel ────────────────────────────────────────────────────
-    let selectedMMSI = null;
-
-    function showPanel(mmsi) {
+    // ── STEP 5: Info panel ───────────────────────────────────────────────────
+    function showPanel(mmsi, center = true) {
       const v = vessels[mmsi]?.data;
       if (!v) return;
       selectedMMSI = mmsi;
@@ -115,6 +199,10 @@
       document.getElementById("panel-time").textContent    = v.timestamp
         ? new Date(v.timestamp).toLocaleTimeString()
         : "—";
+
+      if (center && v.lat && v.lng) {
+        map.flyTo([v.lat, v.lng], 7, { duration: 1.2 });
+      }
 
       document.getElementById("info-panel").style.display = "block";
     }
